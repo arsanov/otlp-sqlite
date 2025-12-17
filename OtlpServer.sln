@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OtlpServer", "OtlpServer.csproj", "{EB9F7449-49FD-1DD6-CB1F-ACA72CA46CDD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EB9F7449-49FD-1DD6-CB1F-ACA72CA46CDD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EB9F7449-49FD-1DD6-CB1F-ACA72CA46CDD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EB9F7449-49FD-1DD6-CB1F-ACA72CA46CDD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EB9F7449-49FD-1DD6-CB1F-ACA72CA46CDD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D8F1555B-FD59-429D-9854-F1E3276BDA81}
+	EndGlobalSection
+EndGlobal
