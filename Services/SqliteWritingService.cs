@@ -20,7 +20,7 @@ namespace OtlpServer
 {
     public class SqliteWritingService : IHostedService
     {
-        private readonly IObservable<Span> spanStream;
+        private readonly IObservable<TraceData> spanStream;
         private readonly IObservable<LogRecord> logStream;
         private readonly IServiceProvider provider;
 
@@ -28,7 +28,7 @@ namespace OtlpServer
         private Thread runnerThread;
         private IDisposable subscription;
 
-        public SqliteWritingService(IObservable<Span> spanStream, IObservable<LogRecord> logStream, IServiceProvider provider)
+        public SqliteWritingService(IObservable<TraceData> spanStream, IObservable<LogRecord> logStream, IServiceProvider provider)
         {
             this.spanStream = spanStream;
             this.logStream = logStream;
@@ -45,7 +45,7 @@ namespace OtlpServer
             });
             runnerThread.Start();
             subscription =
-                spanStream.Select(FromSpan).Merge(logStream.Select(FromLog))
+                spanStream.Select(FromTraceData).Merge(logStream.Select(FromLog))
                 .Buffer(TimeSpan.FromSeconds(10))
                 .ObserveOn(syncContext)
                 .Subscribe(OnNewEntry);
@@ -66,16 +66,21 @@ namespace OtlpServer
             }
         }
 
-        private static Action<TraceContext> FromSpan(Span span)
+        private static Action<TraceContext> FromTraceData(TraceData traceData)
         {
-            static TraceEntry convertSpan(Span span)
+            static TraceEntry convertSpan(TraceData traceData)
             {
+                var span = traceData.Span;
+                var scope = traceData.Scope;
+                var resource = traceData.Resource;
                 return new TraceEntry
                 {
                     TraceId = new Guid(span.TraceId.ToByteArray()),
                     SpanId = BitConverter.ToUInt64(span.SpanId.Span),
                     Kind = (int)span.Kind,
                     Attributes = GetAttributes(span.Attributes),
+                    ScopeAttributes = GetAttributes(scope.Attributes),
+                    ResourceAttributes = GetAttributes(resource.Attributes),
                     Name = span.Name,
                     ParentSpanId = span.ParentSpanId.IsEmpty ? null : BitConverter.ToUInt64(span.ParentSpanId.Span),
                     StatusMessage = span.Status?.Message,
@@ -86,7 +91,7 @@ namespace OtlpServer
                 };
             }
 
-            return c => c.TraceEntries.Add(convertSpan(span));
+            return c => c.TraceEntries.Add(convertSpan(traceData));
         }
 
         private static Action<TraceContext> FromLog(LogRecord log)

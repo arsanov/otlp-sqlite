@@ -11,6 +11,8 @@ namespace OtlpServer.Db
 
         public int Kind { get; set; }
         public string Attributes { get; set; }
+        public string ScopeAttributes { get; set; }
+        public string ResourceAttributes { get; set; }
         public string Name { get; set; }
         public ulong? ParentSpanId { get; set; }
         public string StatusMessage { get; set; }

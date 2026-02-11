@@ -12,7 +12,6 @@ using OpenTelemetry.Proto.Collector.Metrics.V1;
 using OpenTelemetry.Proto.Collector.Trace.V1;
 using OpenTelemetry.Proto.Logs.V1;
 using OpenTelemetry.Proto.Metrics.V1;
-using OpenTelemetry.Proto.Trace.V1;
 using OtlpServer.Db;
 using OtlpServer.Extensions;
 using Settings.Extensions.Configuration;
@@ -33,7 +32,7 @@ namespace OtlpServer
             services.AddHostedService<SqliteWritingService>();
             services.AddHostedService<MigrationStartupService>();
 
-            services.AddSingleton<IObservable<Span>, ISubject<Span>, Subject<Span>>();
+            services.AddSingleton<IObservable<TraceData>, ISubject<TraceData>, Subject<TraceData>>();
             services.AddSingleton<IObservable<LogRecord>, ISubject<LogRecord>, Subject<LogRecord>>();
         }
 
@@ -52,12 +51,11 @@ namespace OtlpServer
 
             app.Run();
         }
-
-        private class TraceService(ISubject<Span> spanStream) : TraceServiceBase
+        private class TraceService(ISubject<TraceData> traceDataStream) : TraceServiceBase
         {
             public override Task<ExportTraceServiceResponse> Export(ExportTraceServiceRequest request, ServerCallContext context)
             {
-                spanStream.OnNextRange(request.ResourceSpans.SelectMany(sc => sc.ScopeSpans.SelectMany(s => s.Spans)));
+                traceDataStream.OnNextRange(request.ResourceSpans.SelectMany(sc => sc.ScopeSpans.SelectMany(s => s.Spans.Select(sp => new TraceData(sc.Resource, s.Scope, sp)))));
                 return Task.FromResult(new ExportTraceServiceResponse());
             }
         }
