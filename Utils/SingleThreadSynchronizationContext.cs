@@ -3,37 +3,36 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
 
 namespace OtlpServer.Utils
 {
-    public sealed class SingleThreadSynchronizationContext : SynchronizationContext, IDisposable
+    public sealed class SingleThreadSynchronizationContext : SynchronizationContext, IHostedService
     {
         private readonly BlockingCollection<KeyValuePair<SendOrPostCallback, object>> queue = new();
 
         private int contextThreadId = -1;
         private bool disposed = false;
+        private Thread runnerThread;
 
         public SingleThreadSynchronizationContext() { }
 
         public TaskScheduler TaskScheduler => new SyncContextTaskScheduler(this);
+        public TaskCompletionSource contextStartedSource = new();
+        public Task ContextStarted => contextStartedSource.Task;
+        public CancellationTokenSource cancellationTokenSource = new();
+        public CancellationToken Token => cancellationTokenSource.Token;
 
         public override void Post(SendOrPostCallback d, object state)
         {
-            if (d == null)
-            {
-                throw new ArgumentNullException(nameof(d));
-            }
-
+            ArgumentNullException.ThrowIfNull(d, nameof(d));
             ThrowIfDisposed();
             queue.Add(new KeyValuePair<SendOrPostCallback, object>(d, state));
         }
 
         public override void Send(SendOrPostCallback d, object state)
         {
-            if (d == null)
-            {
-                throw new ArgumentNullException(nameof(d));
-            }
+            ArgumentNullException.ThrowIfNull(d, nameof(d));
 
             ThrowIfDisposed();
 
@@ -70,7 +69,6 @@ namespace OtlpServer.Utils
             {
                 throw new AggregateException("Exception was thrown inside synchronization context.", dispatchException);
             }
-
         }
 
         public void RunOnCurrentThread()
@@ -105,15 +103,11 @@ namespace OtlpServer.Utils
             {
                 queue.CompleteAdding();
             }
-
         }
 
         private void ThrowIfDisposed()
         {
-            if (disposed)
-            {
-                throw new ObjectDisposedException(nameof(SingleThreadSynchronizationContext));
-            }
+            ObjectDisposedException.ThrowIf(disposed, this);
         }
 
         public void Dispose()
@@ -124,6 +118,20 @@ namespace OtlpServer.Utils
                 Complete();
                 queue.Dispose();
             }
+        }
+
+        public async Task StartAsync(CancellationToken cancellationToken)
+        {
+            runnerThread = new Thread(_ => this.RunOnCurrentThread());
+            runnerThread.Start();
+            contextStartedSource.SetResult();
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            Complete();
+            runnerThread.Join();
+            return Task.CompletedTask;
         }
 
         private sealed class SyncContextTaskScheduler : TaskScheduler

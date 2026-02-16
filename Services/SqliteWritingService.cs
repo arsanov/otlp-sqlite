@@ -6,6 +6,8 @@ using System.Reactive.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Aspire.DashboardService.Proto.V1;
+using AspireResourceServer.Services;
 using Google.Protobuf.Collections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -22,33 +24,31 @@ namespace OtlpServer
     {
         private readonly IObservable<TraceData> spanStream;
         private readonly IObservable<LogRecord> logStream;
-        private readonly IServiceProvider provider;
-
-        private SingleThreadSynchronizationContext syncContext;
-        private Thread runnerThread;
+        private readonly IServiceScopeFactory scopeFactory;
+        private readonly SingleThreadSynchronizationContext syncContext;
         private IDisposable subscription;
 
-        public SqliteWritingService(IObservable<TraceData> spanStream, IObservable<LogRecord> logStream, IServiceProvider provider)
+        public SqliteWritingService(IObservable<TraceData> spanStream,
+        IObservable<LogRecord> logStream,
+        IServiceScopeFactory scopeFactory,
+        SingleThreadSynchronizationContext syncContext)
         {
             this.spanStream = spanStream;
             this.logStream = logStream;
-
-            this.provider = provider;
+            this.scopeFactory = scopeFactory;
+            this.syncContext = syncContext;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            syncContext = new SingleThreadSynchronizationContext();
-            runnerThread = new Thread(_ =>
+            syncContext.ContextStarted.ContinueWith(t =>
             {
-                syncContext.RunOnCurrentThread();
+                subscription =
+                     spanStream.Select(FromTraceData).Merge(logStream.Select(FromLog))
+                     .Buffer(TimeSpan.FromSeconds(10))
+                     .ObserveOn(syncContext)
+                     .Subscribe(OnNewEntry);
             });
-            runnerThread.Start();
-            subscription =
-                spanStream.Select(FromTraceData).Merge(logStream.Select(FromLog))
-                .Buffer(TimeSpan.FromSeconds(10))
-                .ObserveOn(syncContext)
-                .Subscribe(OnNewEntry);
             return Task.CompletedTask;
         }
 
@@ -56,7 +56,7 @@ namespace OtlpServer
         {
             if (list.Any())
             {
-                using var scope = provider.CreateScope();
+                using var scope = scopeFactory.CreateScope();
                 var context = scope.ServiceProvider.GetRequiredService<TraceContext>();
                 foreach (var item in list)
                 {
@@ -103,7 +103,7 @@ namespace OtlpServer
                     TraceId = log.TraceId.IsEmpty ? null : new Guid(log.TraceId.ToByteArray()),
                     SpanId = log.SpanId.IsEmpty ? null : BitConverter.ToUInt64(log.SpanId.Span),
                     Attributes = GetAttributes(log.Attributes),
-                    Body = JsonSerializer.Serialize(SerializeAnyValue(log.Body)),
+                    Body = JsonSerializer.Serialize(ExtraUtils.SerializeAnyValue(log.Body)),
                     EventName = log.EventName,
                     Flags = log.Flags,
                     ObservedTimeUnixNano = log.ObservedTimeUnixNano,
@@ -115,7 +115,6 @@ namespace OtlpServer
 
             return c => c.LogEntries.Add(convertLog(log));
         }
-
 
         private static Action<TraceContext> FromLog(Metric metric)
         {
@@ -133,30 +132,12 @@ namespace OtlpServer
 
         private static string GetAttributes(RepeatedField<KeyValue> values)
         {
-            return JsonSerializer.Serialize(values.ToDictionary(kv => kv.Key, kv => SerializeAnyValue(kv.Value)));
-        }
-
-        private static object SerializeAnyValue(AnyValue anyValue)
-        {
-            return anyValue.ValueCase switch
-            {
-                AnyValue.ValueOneofCase.None => null,
-                AnyValue.ValueOneofCase.StringValue => anyValue.StringValue,
-                AnyValue.ValueOneofCase.BoolValue => anyValue.BoolValue,
-                AnyValue.ValueOneofCase.IntValue => anyValue.IntValue,
-                AnyValue.ValueOneofCase.DoubleValue => anyValue.DoubleValue,
-                AnyValue.ValueOneofCase.ArrayValue => anyValue.ArrayValue.Values.Select(SerializeAnyValue).ToArray(),
-                AnyValue.ValueOneofCase.KvlistValue => anyValue.KvlistValue.Values.Select(kv => new KeyValuePair<string, object>(kv.Key, SerializeAnyValue(kv.Value))).ToList(),
-                AnyValue.ValueOneofCase.BytesValue => anyValue.BytesValue.ToByteArray(),
-                _ => throw new Exception(),
-            };
+            return JsonSerializer.Serialize(values.ToDictionary(kv => kv.Key, kv => ExtraUtils.SerializeAnyValue(kv.Value)));
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
             subscription.Dispose();
-            syncContext.Complete();
-            runnerThread.Join();
             return Task.CompletedTask;
         }
     }
