@@ -110,6 +110,7 @@ namespace AspireResourceServer.Services
                     .Select(eventPattern => eventPattern.Sender as ResourceModel)
                     .Select(FromResourceModel).Subscribe(PublishResourceUpdate));
                 resourceMap.Add(name, resource);
+                PublishResourceUpdate(FromResourceModel(resource));
             }
 
             return resource;
