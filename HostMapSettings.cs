@@ -6,5 +6,6 @@ namespace OtlpServer
     public class HostMapSettings
     {
         public List<List<EndPoint>> Hosts { get; set; }
+        public Dictionary<string, string> IpMap { get; set; } = [];
     }
 }

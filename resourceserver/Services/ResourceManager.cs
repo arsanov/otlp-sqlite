@@ -98,36 +98,39 @@ namespace AspireResourceServer.Services
             };
         }
 
-        private void ProcessResource(TraceModel trace)
+        private ResourceModel GetResource(string name, string icon = null)
         {
-            if (!resourceMap.TryGetValue(trace.ServiceName, out var resource))
+            if (!resourceMap.TryGetValue(name, out var resource))
             {
-                resource = ResourceModel.Create(trace.ServiceName, trace.ServiceNamespace == "testing" ? "Beaker" : null);
+                resource = ResourceModel.Create(name, icon);
                 subscriptions.Add(Observable.FromEventPattern<PropertyChangedEventHandler, PropertyChangedEventArgs>(
                     handler => handler.Invoke,
                     handler => resource.PropertyChanged += handler,
                     handler => resource.PropertyChanged -= handler)
                     .Select(eventPattern => eventPattern.Sender as ResourceModel)
                     .Select(FromResourceModel).Subscribe(PublishResourceUpdate));
-                resourceMap.Add(trace.ServiceName, resource);
+                resourceMap.Add(name, resource);
             }
 
+            return resource;
+        }
+
+        private void ProcessResource(TraceModel trace)
+        {
+            var resource = GetResource(trace.ServiceName, trace.ServiceNamespace == "testing" ? "Beaker" : null);
             var attrs = trace.Attributes;
 
             resource.Attributes = trace.ResourceAttributes.Where(ra => !resource.Attributes.ContainsKey(ra.Key)).Aggregate(resource.Attributes, (acc, attr) => acc.Add(attr.Key, JsonToDotnet(attr.Value)));
 
-            if (attrs.TryGetValue("server.address", out var sa) && attrs.TryGetValue("server.port", out var sp))
+            if (attrs.TryGetValue("server.address", out var saip) && attrs.TryGetValue("server.port", out var sp))
             {
-                var endpoint = EndpointConverter.ToEndpoint(sa.GetValue<string>(), sp.AsValue().GetValueKind() == JsonValueKind.Number ? sp.GetValue<int>() : Int32.Parse(sp.GetValue<string>()));
-                var rn = endpointHostMap.TryGetValue(endpoint) ?? EndpointToString(endpoint);
+                var ipaddr = saip.GetValue<string>();
+                var endpoint = EndpointConverter.ToEndpoint(ipaddr, sp.AsValue().GetValueKind() == JsonValueKind.Number ? sp.GetValue<int>() : Int32.Parse(sp.GetValue<string>()));
+                var rn = hostMapSettings.IpMap.TryGetValue(ipaddr) ?? endpointHostMap.TryGetValue(endpoint) ?? EndpointToString(endpoint);
 
                 if (trace.Kind == ActivityKind.Server)
                 {
-                    if (!resourceMap.TryGetValue(rn, out var endpointResource))
-                    {
-                        endpointResource = ResourceModel.Create(rn, "Globe");
-                        resourceMap.TryAdd(rn, endpointResource);
-                    }
+                    var endpointResource = GetResource(rn, "Globe");
                     endpointResource.Parent = resource;
                     if (!resource.Endpoints.ContainsKey(rn))
                     {
@@ -139,12 +142,7 @@ namespace AspireResourceServer.Services
                 {
                     if (attrs.TryGetValue("messaging.system", out var ms))
                     {
-                        if (!resourceMap.TryGetValue(rn, out var nr))
-                        {
-                            nr = ResourceModel.Create(rn, "Mailbox");
-
-                            resourceMap.TryAdd(rn, nr);
-                        }
+                        var nr = GetResource(rn, "Mailbox");
                         resource.AddReferenceTo(nr);
                     }
                 }
@@ -152,11 +150,7 @@ namespace AspireResourceServer.Services
                 {
                     if (attrs.TryGetValue("messaging.system", out var ms))
                     {
-                        if (!resourceMap.TryGetValue(rn, out var nr))
-                        {
-                            nr = ResourceModel.Create(rn, "Mailbox");
-                            resourceMap.TryAdd(rn, nr);
-                        }
+                        var nr = GetResource(rn, "Mailbox");
                         nr.AddReferenceTo(resource);
                     }
                 }
@@ -164,22 +158,12 @@ namespace AspireResourceServer.Services
                 {
                     if (attrs.TryGetValue("http.request.method", out var ms))
                     {
-                        if (!resourceMap.TryGetValue(rn, out var nr))
-                        {
-                            nr = ResourceModel.Create(rn, "Globe");
-
-                            resourceMap.TryAdd(rn, nr);
-                        }
+                        var nr = GetResource(rn, "Globe");
                         resource.AddReferenceTo(nr);
                     }
                     else if (attrs.TryGetValue("db.system", out var ds))
                     {
-                        if (!resourceMap.TryGetValue(rn, out var nr))
-                        {
-                            nr = ResourceModel.Create(rn, "Database");
-
-                            resourceMap.TryAdd(rn, nr);
-                        }
+                        var nr = GetResource(rn, "Database");
                         resource.AddReferenceTo(nr);
                     }
                 }
